@@ -7,6 +7,8 @@ var inherits          = require('inherits')
 /* istanbul ignore next */
 var setImmediate = global.setImmediate || process.nextTick
 
+var NOT_FOUND_ERROR = new Error('NotFound');
+
 function gt(value) {
   return ltgt.compare(value, this._end) > 0
 }
@@ -121,8 +123,8 @@ function MemDOWN (location) {
   AbstractLevelDOWN.call(this, typeof location == 'string' ? location : '')
 
   this._location = this.location ? ('$' + this.location) : '_tree'
-  this._store = this.location ? globalStore: this
-  this._store[this._location] = this._store[this._location] || createRBT(ltgt.compare)
+  this._store = this.location ? globalStore : this
+  this._db = this._store[this._location] = this._store[this._location] || createRBT(ltgt.compare)
 }
 
 MemDOWN.clearGlobalStore = function (strict) {
@@ -145,24 +147,23 @@ MemDOWN.prototype._open = function (options, callback) {
 MemDOWN.prototype._put = function (key, value, options, callback) {
   if (typeof value === 'undefined' || value === null) value = ''
 
-  var iter = this._store[this._location].find(key)
+  var iter = this._db.find(key)
 
   if (iter.valid) {
-    this._store[this._location] = iter.update(value)
+    this._db = iter.update(value)
   } else {
-    this._store[this._location] = this._store[this._location].insert(key, value)
+    this._db = this._db.insert(key, value)
   }
 
   setImmediate(callback)
 }
 
 MemDOWN.prototype._get = function (key, options, callback) {
-  var value = this._store[this._location].get(key)
+  var value = this._db.get(key)
 
-  if (value === undefined) {
+  if (typeof value === 'undefined') {
     // 'NotFound' error, consistent with LevelDOWN API
-    var err = new Error('NotFound')
-    return setImmediate(function callNext() { callback(err) })
+    return setImmediate(function callNext () { callback(NOT_FOUND_ERROR) })
   }
 
   if (options.asBuffer !== false && !this._isBuffer(value))
@@ -175,7 +176,7 @@ MemDOWN.prototype._get = function (key, options, callback) {
 }
 
 MemDOWN.prototype._del = function (key, options, callback) {
-  this._store[this._location] = this._store[this._location].remove(key)
+  this._db = this._db.remove(key)
   setImmediate(callback)
 }
 
@@ -185,7 +186,7 @@ MemDOWN.prototype._batch = function (array, options, callback) {
     , value
     , iter
     , len = array.length
-    , tree = this._store[this._location]
+    , tree = this._db
 
   while (++i < len) {
     if (!array[i])
@@ -202,7 +203,7 @@ MemDOWN.prototype._batch = function (array, options, callback) {
     }
   }
 
-  this._store[this._location] = tree;
+  this._db = tree;
 
   setImmediate(callback)
 }
